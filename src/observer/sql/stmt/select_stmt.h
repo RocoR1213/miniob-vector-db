@@ -22,6 +22,7 @@ class FieldMeta;
 class FilterStmt;
 class Db;
 class Table;
+class Expression;
 
 /**
  * @brief 表示select语句
@@ -45,9 +46,17 @@ public:
   vector<unique_ptr<Expression>> &query_expressions() { return query_expressions_; }
   vector<unique_ptr<Expression>> &group_by() { return group_by_; }
 
+  const vector<unique_ptr<Expression>> &order_exprs() const { return order_exprs_; }
+  const vector<bool>                   &order_dirs() const { return order_dirs_; }
+
+  void add_order_expr(unique_ptr<Expression> expr, bool desc);
+
+
 private:
   vector<unique_ptr<Expression>> query_expressions_;
   vector<Table *>                tables_;
   FilterStmt                    *filter_stmt_ = nullptr;
   vector<unique_ptr<Expression>> group_by_;
+  vector<unique_ptr<Expression>> order_exprs_;
+  vector<bool>                   order_dirs_;
 };

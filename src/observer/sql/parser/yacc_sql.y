@@ -89,7 +89,7 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
         INDEX
         CALC
         SELECT
-        DESC
+        ORDER
         SHOW
         SYNC
         INSERT
@@ -137,6 +137,9 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
         GE
         NE
 
+%token <order_direction_val> ASC
+%token <order_direction_val> DESC
+
 /** union 中定义各种数据类型，真实生成的代码也是union类型，所以不能有非POD类型的数据 **/
 %union {
   ParsedSqlNode *                            sql_node;
@@ -156,6 +159,9 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
   char *                                     cstring;
   int                                        number;
   float                                      floats;
+  std::vector<OrderByUnit*> *                order_by_list_val;
+  OrderByUnit *                              order_by_unit_val;
+  int                                        order_direction_val; 
 }
 
 %destructor { delete $$; } <condition>
@@ -228,6 +234,9 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %left '+' '-'
 %left '*' '/'
 %right UMINUS
+%type <order_by_list_val>   order_by_columns order_by_clause
+%type <order_by_unit_val>   order_by_column
+%type <order_direction_val> opt_order_direction
 %%
 
 commands: command_wrapper opt_semicolon  //commands or sqls. parser starts here.
@@ -512,7 +521,7 @@ update_stmt:      /*  update 语句的语法解析树*/
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/
-    SELECT expression_list FROM rel_list where group_by
+    SELECT expression_list FROM rel_list where group_by order_by_clause
     {
       $$ = new ParsedSqlNode(SCF_SELECT);
       if ($2 != nullptr) {
@@ -533,6 +542,12 @@ select_stmt:        /*  select 语句的语法解析树*/
       if ($6 != nullptr) {
         $$->selection.group_by.swap(*$6);
         delete $6;
+      }
+
+      /* 新增处理ORDER BY */
+      if ($7 != nullptr){
+        $$->selection.order_by = *$7;/* 假设 ParsedSqlNode::selection 中有 order_by 字段 */
+        delete $7;
       }
     }
     ;
@@ -749,6 +764,53 @@ group_by:
       $$ = $3;
     }
     ;
+
+order_by_clause:
+    /* empty */
+    {
+        $$ = nullptr;
+    }
+    | ORDER BY order_by_columns
+    {
+        $$ = $3;
+    }
+    ;
+
+order_by_columns:
+    order_by_column
+    {
+        $$ = new std::vector<OrderByUnit*>();
+        $$->push_back($1);
+    }
+    | order_by_columns ',' order_by_column
+    {
+        $1->push_back($3);
+        $$ = $1;
+    }
+    ;
+
+order_by_column:
+    expression opt_order_direction
+    {
+        $$ = new OrderByUnit($1, $2);
+    }
+    ;
+
+opt_order_direction:
+    ASC
+    {
+        $$ = 0;   // 0 表示升序
+    }
+    | DESC
+    {
+        $$ = 1;   // 1 表示降序
+    }
+    | /* empty */
+    {
+        $$ = 0;   // 默认升序
+    }
+    ;
+
 load_data_stmt:
     LOAD DATA INFILE SSS INTO TABLE ID fields_terminated_by enclosed_by
     {
