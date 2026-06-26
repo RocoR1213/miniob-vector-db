@@ -141,9 +141,10 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   }
 
   unique_ptr<LogicalOperator> sort_oper;
-  if (!select_stmt->order_by().empty()) {
+  const bool has_order_by = !select_stmt->order_by().empty();
+  if (has_order_by) {
     sort_oper = make_unique<SortLogicalOperator>(
-        std::move(select_stmt->order_by()), std::move(select_stmt->order_by_ascending()));
+        std::move(select_stmt->order_by()), std::move(select_stmt->order_by_ascending()), select_stmt->limit());
     if (*last_oper) {
       sort_oper->add_child(std::move(*last_oper));
     }
@@ -151,7 +152,9 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
     last_oper = &sort_oper;
   }
 
-  unique_ptr<LogicalOperator> project_oper = make_unique<ProjectLogicalOperator>(std::move(select_stmt->query_expressions()));
+  auto project_logical_oper = make_unique<ProjectLogicalOperator>(std::move(select_stmt->query_expressions()));
+  project_logical_oper->set_limit(select_stmt->limit());
+  unique_ptr<LogicalOperator> project_oper = std::move(project_logical_oper);
   if (*last_oper) {
     project_oper->add_child(std::move(*last_oper));
   }
@@ -159,7 +162,7 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   last_oper = &project_oper;
 
   unique_ptr<LogicalOperator> limit_oper;
-  if (select_stmt->limit() >= 0) {
+  if (select_stmt->limit() >= 0 && !has_order_by) {
     limit_oper = make_unique<LimitLogicalOperator>(select_stmt->limit());
     limit_oper->add_child(std::move(*last_oper));
     last_oper = &limit_oper;

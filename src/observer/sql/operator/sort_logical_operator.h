@@ -19,8 +19,8 @@ See the Mulan PSL v2 for more details. */
 class SortLogicalOperator : public LogicalOperator
 {
 public:
-  SortLogicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&ascending)
-      : order_by_expressions_(std::move(expressions)), ascending_(std::move(ascending))
+  SortLogicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&ascending, int limit = -1)
+      : order_by_expressions_(std::move(expressions)), ascending_(std::move(ascending)), limit_(limit)
   {}
 
   virtual ~SortLogicalOperator() = default;
@@ -30,8 +30,11 @@ public:
 
   vector<unique_ptr<Expression>> &order_by_expressions() { return order_by_expressions_; }
   vector<bool>                   &ascending() { return ascending_; }
+  void                            set_limit(int limit) { limit_ = limit; }
+  int                             limit() const { return limit_; }
 
 private:
   vector<unique_ptr<Expression>> order_by_expressions_;
   vector<bool>                   ascending_;
+  int                            limit_ = -1;
 };

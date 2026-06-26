@@ -21,13 +21,14 @@ See the Mulan PSL v2 for more details. */
 class SortPhysicalOperator : public PhysicalOperator
 {
 public:
-  SortPhysicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&ascending);
+  SortPhysicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&ascending, int limit = -1);
   virtual ~SortPhysicalOperator() = default;
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::SORT; }
   OpType               get_op_type() const override { return OpType::ORDERBY; }
 
   string name() const override { return "SORT"; }
+  string param() const override;
 
   RC open(Trx *trx) override;
   RC next() override;
@@ -50,6 +51,7 @@ private:
 private:
   vector<unique_ptr<Expression>> order_by_expressions_;
   vector<bool>                   ascending_;
+  int                            limit_ = -1;
   vector<Row>                    rows_;
   size_t                         cursor_ = 0;
   ValueListTuple                 current_tuple_;

@@ -399,7 +399,7 @@ RC PhysicalPlanGenerator::create_plan(SortLogicalOperator &logical_oper, unique_
   }
 
   auto sort_oper = make_unique<SortPhysicalOperator>(
-      std::move(logical_oper.order_by_expressions()), std::move(logical_oper.ascending()));
+      std::move(logical_oper.order_by_expressions()), std::move(logical_oper.ascending()), logical_oper.limit());
   sort_oper->add_child(std::move(child_physical_oper));
   oper = std::move(sort_oper);
   return RC::SUCCESS;

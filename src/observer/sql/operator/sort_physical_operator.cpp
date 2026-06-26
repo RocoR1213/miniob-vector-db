@@ -11,14 +11,21 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/sort_physical_operator.h"
 
 #include <algorithm>
+#include <string>
 
 #include "common/log/log.h"
 
 using namespace std;
 
-SortPhysicalOperator::SortPhysicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&ascending)
-    : order_by_expressions_(std::move(expressions)), ascending_(std::move(ascending))
+SortPhysicalOperator::SortPhysicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&ascending,
+    int limit)
+    : order_by_expressions_(std::move(expressions)), ascending_(std::move(ascending)), limit_(limit)
 {}
+
+string SortPhysicalOperator::param() const
+{
+  return limit_ >= 0 ? "limit=" + std::to_string(limit_) : "";
+}
 
 RC SortPhysicalOperator::open(Trx *trx)
 {
@@ -66,6 +73,9 @@ RC SortPhysicalOperator::open(Trx *trx)
   stable_sort(rows_.begin(), rows_.end(), [this](const Row &left, const Row &right) {
     return less_than(left, right);
   });
+  if (limit_ >= 0 && rows_.size() > static_cast<size_t>(limit_)) {
+    rows_.resize(static_cast<size_t>(limit_));
+  }
 
   return RC::SUCCESS;
 }
