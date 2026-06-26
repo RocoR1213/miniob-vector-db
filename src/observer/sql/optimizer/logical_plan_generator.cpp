@@ -21,9 +21,11 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/explain_logical_operator.h"
 #include "sql/operator/insert_logical_operator.h"
 #include "sql/operator/join_logical_operator.h"
+#include "sql/operator/limit_logical_operator.h"
 #include "sql/operator/logical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
 #include "sql/operator/project_logical_operator.h"
+#include "sql/operator/sort_logical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
 #include "sql/operator/group_by_logical_operator.h"
 
@@ -138,12 +140,30 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
     last_oper = &group_by_oper;
   }
 
+  unique_ptr<LogicalOperator> sort_oper;
+  if (!select_stmt->order_by().empty()) {
+    sort_oper = make_unique<SortLogicalOperator>(
+        std::move(select_stmt->order_by()), std::move(select_stmt->order_by_ascending()));
+    if (*last_oper) {
+      sort_oper->add_child(std::move(*last_oper));
+    }
+
+    last_oper = &sort_oper;
+  }
+
   unique_ptr<LogicalOperator> project_oper = make_unique<ProjectLogicalOperator>(std::move(select_stmt->query_expressions()));
   if (*last_oper) {
     project_oper->add_child(std::move(*last_oper));
   }
 
   last_oper = &project_oper;
+
+  unique_ptr<LogicalOperator> limit_oper;
+  if (select_stmt->limit() >= 0) {
+    limit_oper = make_unique<LimitLogicalOperator>(select_stmt->limit());
+    limit_oper->add_child(std::move(*last_oper));
+    last_oper = &limit_oper;
+  }
 
   logical_operator = std::move(*last_oper);
   return RC::SUCCESS;

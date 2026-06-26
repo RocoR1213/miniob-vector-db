@@ -40,6 +40,8 @@ enum class LogicalOperatorType
   DELETE,      ///< 删除，删除可能会有子查询
   EXPLAIN,     ///< 查看执行计划
   GROUP_BY,    ///< 分组
+  SORT,        ///< 排序
+  LIMIT,       ///< 截断输出行数
 };
 
 /**
@@ -60,8 +62,10 @@ public:
   void        add_child(unique_ptr<LogicalOperator> oper);
   void        add_expressions(unique_ptr<Expression> expr);
   auto        children() -> vector<unique_ptr<LogicalOperator>>        &{ return children_; }
+  auto        children() const -> const vector<unique_ptr<LogicalOperator>> &{ return children_; }
   auto        expressions() -> vector<unique_ptr<Expression>>        &{ return expressions_; }
   static bool can_generate_vectorized_operator(const LogicalOperatorType &type);
+  static bool can_generate_vectorized_operator(const LogicalOperator &oper);
   // TODO: used by cascade optimizer, tmp function, need to be remove
   void generate_general_child();
 

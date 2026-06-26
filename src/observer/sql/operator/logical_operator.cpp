@@ -28,6 +28,8 @@ bool LogicalOperator::can_generate_vectorized_operator(const LogicalOperatorType
   case LogicalOperatorType::CALC:
   case LogicalOperatorType::DELETE:
   case LogicalOperatorType::INSERT:
+  case LogicalOperatorType::SORT:
+  case LogicalOperatorType::LIMIT:
     bool_ret = false;
     break;
   
@@ -38,6 +40,21 @@ bool LogicalOperator::can_generate_vectorized_operator(const LogicalOperatorType
   return bool_ret;
 }
 
+bool LogicalOperator::can_generate_vectorized_operator(const LogicalOperator &oper)
+{
+  if (!can_generate_vectorized_operator(oper.type())) {
+    return false;
+  }
+
+  for (const unique_ptr<LogicalOperator> &child : oper.children()) {
+    if (!can_generate_vectorized_operator(*child)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 void LogicalOperator::generate_general_child()
 {
   for (auto &child : children_) {
@@ -45,4 +62,3 @@ void LogicalOperator::generate_general_child()
     child->generate_general_child();
   }
 }
-

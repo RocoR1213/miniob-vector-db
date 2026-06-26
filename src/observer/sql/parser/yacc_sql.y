@@ -80,10 +80,13 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 
 //标识tokens
 %token  SEMICOLON
+        AS
+        ASC
         BY
         CREATE
         DROP
         GROUP
+        ORDER
         TABLE
         TABLES
         INDEX
@@ -115,6 +118,7 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
         VALUES
         FROM
         WHERE
+        LIMIT
         AND
         SET
         ON
@@ -148,6 +152,8 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
   AttrInfoSqlNode *                          attr_info;
   Expression *                               expression;
   vector<unique_ptr<Expression>> *           expression_list;
+  OrderBySqlNode *                           order_by;
+  vector<OrderBySqlNode> *                   order_by_list;
   vector<Value> *                            value_list;
   vector<ConditionSqlNode> *                 condition_list;
   vector<RelAttrSqlNode> *                   rel_attr_list;
@@ -164,6 +170,8 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %destructor { delete $$; } <attr_infos>
 %destructor { delete $$; } <expression>
 %destructor { delete $$; } <expression_list>
+%destructor { delete $$; } <order_by>
+%destructor { delete $$; } <order_by_list>
 %destructor { delete $$; } <value_list>
 %destructor { delete $$; } <condition_list>
 // %destructor { delete $$; } <rel_attr_list>
@@ -194,10 +202,17 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %type <key_list>            attr_list
 %type <relation_list>       rel_list
 %type <expression>          expression
+%type <expression>          select_expression
 %type <expression>          aggregate_expression
 %type <expression>          function_expression
 %type <expression_list>     expression_list
+%type <expression_list>     select_expression_list
 %type <expression_list>     group_by
+%type <order_by_list>       order_by
+%type <order_by_list>       order_by_list
+%type <order_by>            order_by_unit
+%type <number>              sort_direction
+%type <number>              limit
 %type <cstring>             fields_terminated_by
 %type <cstring>             enclosed_by
 %type <sql_node>            calc_stmt
@@ -512,7 +527,7 @@ update_stmt:      /*  update 语句的语法解析树*/
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/
-    SELECT expression_list FROM rel_list where group_by
+    SELECT select_expression_list FROM rel_list where group_by order_by limit
     {
       $$ = new ParsedSqlNode(SCF_SELECT);
       if ($2 != nullptr) {
@@ -534,6 +549,13 @@ select_stmt:        /*  select 语句的语法解析树*/
         $$->selection.group_by.swap(*$6);
         delete $6;
       }
+
+      if ($7 != nullptr) {
+        $$->selection.order_by.swap(*$7);
+        delete $7;
+      }
+
+      $$->selection.limit = $8;
     }
     ;
 calc_stmt:
@@ -559,6 +581,33 @@ expression_list:
         $$ = new vector<unique_ptr<Expression>>;
       }
       $$->emplace($$->begin(), $1);
+    }
+    ;
+select_expression_list:
+    select_expression
+    {
+      $$ = new vector<unique_ptr<Expression>>;
+      $$->emplace_back($1);
+    }
+    | select_expression COMMA select_expression_list
+    {
+      if ($3 != nullptr) {
+        $$ = $3;
+      } else {
+        $$ = new vector<unique_ptr<Expression>>;
+      }
+      $$->emplace($$->begin(), $1);
+    }
+    ;
+select_expression:
+    expression
+    {
+      $$ = $1;
+    }
+    | expression AS ID
+    {
+      $$ = $1;
+      $$->set_name($3);
     }
     ;
 expression:
@@ -747,6 +796,62 @@ group_by:
       // group by 的表达式范围与select查询值的表达式范围是不同的，比如group by不支持 *
       // 但是这里没有处理。
       $$ = $3;
+    }
+    ;
+order_by:
+    /* empty */
+    {
+      $$ = nullptr;
+    }
+    | ORDER BY order_by_list
+    {
+      $$ = $3;
+    }
+    ;
+order_by_list:
+    order_by_unit
+    {
+      $$ = new vector<OrderBySqlNode>;
+      $$->emplace_back(std::move(*$1));
+      delete $1;
+    }
+    | order_by_list COMMA order_by_unit
+    {
+      $$ = $1;
+      $$->emplace_back(std::move(*$3));
+      delete $3;
+    }
+    ;
+order_by_unit:
+    expression sort_direction
+    {
+      $$ = new OrderBySqlNode;
+      $$->expression.reset($1);
+      $$->asc = $2 != 0;
+    }
+    ;
+sort_direction:
+    /* empty */
+    {
+      $$ = 1;
+    }
+    | ASC
+    {
+      $$ = 1;
+    }
+    | DESC
+    {
+      $$ = 0;
+    }
+    ;
+limit:
+    /* empty */
+    {
+      $$ = -1;
+    }
+    | LIMIT NUMBER
+    {
+      $$ = $2;
     }
     ;
 load_data_stmt:

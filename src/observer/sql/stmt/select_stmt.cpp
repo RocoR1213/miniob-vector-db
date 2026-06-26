@@ -31,6 +31,78 @@ SelectStmt::~SelectStmt()
   }
 }
 
+static bool is_order_by_alias_reference(const Expression &expression, const char *&alias_name)
+{
+  if (expression.type() != ExprType::UNBOUND_FIELD) {
+    return false;
+  }
+
+  const auto *field_expr = static_cast<const UnboundFieldExpr *>(&expression);
+  if (!is_blank(field_expr->table_name())) {
+    return false;
+  }
+
+  alias_name = field_expr->field_name();
+  return !is_blank(alias_name);
+}
+
+static unique_ptr<Expression> find_order_by_alias_expression(
+    const char *alias_name, const vector<unique_ptr<Expression>> &select_expressions)
+{
+  for (const unique_ptr<Expression> &expression : select_expressions) {
+    if (!is_blank(expression->name()) && 0 == strcasecmp(alias_name, expression->name())) {
+      return expression->copy();
+    }
+  }
+
+  return nullptr;
+}
+
+static bool is_sortable_type(AttrType type)
+{
+  return type == AttrType::INTS || type == AttrType::FLOATS || type == AttrType::CHARS ||
+         type == AttrType::BOOLEANS;
+}
+
+static RC bind_order_by_expressions(ExpressionBinder &expression_binder,
+    vector<OrderBySqlNode> &order_by_nodes, const vector<unique_ptr<Expression>> &select_expressions,
+    vector<unique_ptr<Expression>> &order_by_expressions, vector<bool> &order_by_ascending)
+{
+  for (OrderBySqlNode &order_by_node : order_by_nodes) {
+    unique_ptr<Expression> order_by_expression;
+
+    const char *alias_name = nullptr;
+    if (order_by_node.expression &&
+        is_order_by_alias_reference(*order_by_node.expression, alias_name)) {
+      order_by_expression = find_order_by_alias_expression(alias_name, select_expressions);
+    }
+
+    if (!order_by_expression) {
+      vector<unique_ptr<Expression>> bound_order_by;
+      RC rc = expression_binder.bind_expression(order_by_node.expression, bound_order_by);
+      if (OB_FAIL(rc)) {
+        LOG_INFO("bind order by expression failed. rc=%s", strrc(rc));
+        return rc;
+      }
+      if (bound_order_by.size() != 1) {
+        LOG_WARN("invalid order by expression number: %d", bound_order_by.size());
+        return RC::INVALID_ARGUMENT;
+      }
+      order_by_expression = std::move(bound_order_by[0]);
+    }
+
+    if (!is_sortable_type(order_by_expression->value_type())) {
+      LOG_WARN("unsupported order by type: %s", attr_type_to_string(order_by_expression->value_type()));
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+
+    order_by_expressions.emplace_back(std::move(order_by_expression));
+    order_by_ascending.emplace_back(order_by_node.asc);
+  }
+
+  return RC::SUCCESS;
+}
+
 RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
 {
   if (nullptr == db) {
@@ -82,6 +154,14 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
     }
   }
 
+  vector<unique_ptr<Expression>> order_by_expressions;
+  vector<bool>                   order_by_ascending;
+  RC rc = bind_order_by_expressions(
+      expression_binder, select_sql.order_by, bound_expressions, order_by_expressions, order_by_ascending);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
   Table *default_table = nullptr;
   if (tables.size() == 1) {
     default_table = tables[0];
@@ -89,7 +169,7 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
 
   // create filter statement in `where` statement
   FilterStmt *filter_stmt = nullptr;
-  RC          rc          = FilterStmt::create(db,
+  rc                      = FilterStmt::create(db,
       default_table,
       &table_map,
       select_sql.conditions.data(),
@@ -107,6 +187,9 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
   select_stmt->query_expressions_.swap(bound_expressions);
   select_stmt->filter_stmt_ = filter_stmt;
   select_stmt->group_by_.swap(group_by_expressions);
+  select_stmt->order_by_.swap(order_by_expressions);
+  select_stmt->order_by_ascending_.swap(order_by_ascending);
+  select_stmt->limit_ = select_sql.limit;
   stmt                      = select_stmt;
   return RC::SUCCESS;
 }

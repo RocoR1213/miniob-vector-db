@@ -173,7 +173,15 @@ RC ExpressionBinder::bind_unbound_field_expression(
 
     Field      field(table, field_meta);
     FieldExpr *field_expr = new FieldExpr(field);
-    field_expr->set_name(field_name);
+    const char *expression_name = expr->name();
+    string      qualified_name;
+    if (!is_blank(table_name)) {
+      qualified_name = string(table_name) + "." + field_name;
+    }
+
+    const bool use_alias = !is_blank(expression_name) && 0 != strcasecmp(expression_name, field_name) &&
+                           (qualified_name.empty() || 0 != strcasecmp(expression_name, qualified_name.c_str()));
+    field_expr->set_name(use_alias ? expression_name : field_name);
     bound_expressions.emplace_back(field_expr);
   }
 

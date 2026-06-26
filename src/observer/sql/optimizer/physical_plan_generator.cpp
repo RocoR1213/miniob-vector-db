@@ -29,12 +29,16 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/insert_logical_operator.h"
 #include "sql/operator/insert_physical_operator.h"
 #include "sql/operator/join_logical_operator.h"
+#include "sql/operator/limit_logical_operator.h"
+#include "sql/operator/limit_physical_operator.h"
 #include "sql/operator/nested_loop_join_physical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
 #include "sql/operator/predicate_physical_operator.h"
 #include "sql/operator/project_logical_operator.h"
 #include "sql/operator/project_physical_operator.h"
 #include "sql/operator/project_vec_physical_operator.h"
+#include "sql/operator/sort_logical_operator.h"
+#include "sql/operator/sort_physical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
 #include "sql/operator/table_scan_physical_operator.h"
 #include "sql/operator/group_by_logical_operator.h"
@@ -85,6 +89,14 @@ RC PhysicalPlanGenerator::create(LogicalOperator &logical_operator, unique_ptr<P
 
     case LogicalOperatorType::GROUP_BY: {
       return create_plan(static_cast<GroupByLogicalOperator &>(logical_operator), oper, session);
+    } break;
+
+    case LogicalOperatorType::SORT: {
+      return create_plan(static_cast<SortLogicalOperator &>(logical_operator), oper, session);
+    } break;
+
+    case LogicalOperatorType::LIMIT: {
+      return create_plan(static_cast<LimitLogicalOperator &>(logical_operator), oper, session);
     } break;
 
     default: {
@@ -369,6 +381,49 @@ RC PhysicalPlanGenerator::create_plan(GroupByLogicalOperator &logical_oper, uniq
 
   oper = std::move(group_by_oper);
   return rc;
+}
+
+RC PhysicalPlanGenerator::create_plan(SortLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
+{
+  vector<unique_ptr<LogicalOperator>> &child_opers = logical_oper.children();
+  if (child_opers.size() != 1) {
+    LOG_WARN("sort operator should have one child, but got %d", child_opers.size());
+    return RC::INTERNAL;
+  }
+
+  unique_ptr<PhysicalOperator> child_physical_oper;
+  RC rc = create(*child_opers.front(), child_physical_oper, session);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create child physical operator of sort. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  auto sort_oper = make_unique<SortPhysicalOperator>(
+      std::move(logical_oper.order_by_expressions()), std::move(logical_oper.ascending()));
+  sort_oper->add_child(std::move(child_physical_oper));
+  oper = std::move(sort_oper);
+  return RC::SUCCESS;
+}
+
+RC PhysicalPlanGenerator::create_plan(LimitLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
+{
+  vector<unique_ptr<LogicalOperator>> &child_opers = logical_oper.children();
+  if (child_opers.size() != 1) {
+    LOG_WARN("limit operator should have one child, but got %d", child_opers.size());
+    return RC::INTERNAL;
+  }
+
+  unique_ptr<PhysicalOperator> child_physical_oper;
+  RC rc = create(*child_opers.front(), child_physical_oper, session);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create child physical operator of limit. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  auto limit_oper = make_unique<LimitPhysicalOperator>(logical_oper.limit());
+  limit_oper->add_child(std::move(child_physical_oper));
+  oper = std::move(limit_oper);
+  return RC::SUCCESS;
 }
 
 RC PhysicalPlanGenerator::create_vec_plan(TableGetLogicalOperator &table_get_oper, unique_ptr<PhysicalOperator> &oper, Session* session)
