@@ -27,8 +27,15 @@ class FieldMeta;
 class CreateIndexStmt : public Stmt
 {
 public:
-  CreateIndexStmt(Table *table, const FieldMeta *field_meta, const string &index_name)
-      : table_(table), field_meta_(field_meta), index_name_(index_name)
+  CreateIndexStmt(Table *table, const FieldMeta *field_meta, const string &index_name, const string &index_type = "",
+      const string &distance_type = "", int lists = 0, int probes = 0)
+      : table_(table),
+        field_meta_(field_meta),
+        index_name_(index_name),
+        index_type_(index_type),
+        distance_type_(distance_type),
+        lists_(lists),
+        probes_(probes)
   {}
 
   virtual ~CreateIndexStmt() = default;
@@ -39,6 +46,12 @@ public:
   const FieldMeta *field_meta() const { return field_meta_; }
   const string    &index_name() const { return index_name_; }
 
+  bool          is_vector_index() const { return !index_type_.empty(); }
+  const string &index_type() const { return index_type_; }
+  const string &distance_type() const { return distance_type_; }
+  int           lists() const { return lists_; }
+  int           probes() const { return probes_; }
+
 public:
   static RC create(Db *db, const CreateIndexSqlNode &create_index, Stmt *&stmt);
 
@@ -46,4 +59,9 @@ private:
   Table           *table_      = nullptr;
   const FieldMeta *field_meta_ = nullptr;
   string           index_name_;
+
+  string index_type_;
+  string distance_type_;
+  int    lists_  = 0;
+  int    probes_ = 0;
 };

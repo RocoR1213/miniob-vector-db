@@ -21,6 +21,26 @@ See the Mulan PSL v2 for more details. */
 using namespace std;
 using namespace common;
 
+static RC normalize_distance_type(const string &input, string &output)
+{
+  output = input;
+  strip(output);
+  str_to_lower(output);
+  if (output == "euclidean" || output == "l2") {
+    output = "l2_distance";
+  } else if (output == "cosine") {
+    output = "cosine_distance";
+  } else if (output == "dot") {
+    output = "inner_product";
+  }
+
+  if (output != "l2_distance" && output != "cosine_distance" && output != "inner_product") {
+    LOG_WARN("unsupported vector distance type: %s", input.c_str());
+    return RC::INVALID_ARGUMENT;
+  }
+  return RC::SUCCESS;
+}
+
 RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt *&stmt)
 {
   stmt = nullptr;
@@ -33,7 +53,6 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
     return RC::INVALID_ARGUMENT;
   }
 
-  // check whether the table exists
   Table *table = db->find_table(table_name);
   if (nullptr == table) {
     LOG_WARN("no such table. db=%s, table_name=%s", db->name(), table_name);
@@ -53,6 +72,39 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
     return RC::SCHEMA_INDEX_NAME_REPEAT;
   }
 
-  stmt = new CreateIndexStmt(table, field_meta, create_index.index_name);
+  string index_type;
+  string distance_type;
+  if (create_index.is_vector) {
+    if (!create_index.options_valid) {
+      LOG_WARN("duplicate CREATE VECTOR INDEX option");
+      return RC::INVALID_ARGUMENT;
+    }
+
+    index_type = create_index.index_type;
+    strip(index_type);
+    str_to_lower(index_type);
+    if (index_type != "ivfflat") {
+      LOG_WARN("unsupported vector index type: %s", create_index.index_type.c_str());
+      return RC::INVALID_ARGUMENT;
+    }
+
+    if (field_meta->type() != AttrType::VECTORS) {
+      LOG_WARN("vector index requires a VECTOR field. table=%s, field=%s", table_name, field_meta->name());
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+
+    if (create_index.lists <= 0 || create_index.probes <= 0 || create_index.probes > create_index.lists) {
+      LOG_WARN("invalid IVF_Flat options. lists=%d, probes=%d", create_index.lists, create_index.probes);
+      return RC::INVALID_ARGUMENT;
+    }
+
+    RC rc = normalize_distance_type(create_index.distance_type, distance_type);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+  }
+
+  stmt = new CreateIndexStmt(
+      table, field_meta, create_index.index_name, index_type, distance_type, create_index.lists, create_index.probes);
   return RC::SUCCESS;
 }

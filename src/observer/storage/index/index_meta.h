@@ -41,6 +41,17 @@ public:
   const char *name() const;
   const char *field() const;
 
+  bool        is_vector_index() const { return index_type_ == "ivfflat"; }
+  const char *index_type() const { return index_type_.c_str(); }
+  const char *distance_type() const { return distance_type_.c_str(); }
+  int         lists() const { return lists_; }
+  int         probes() const { return probes_; }
+
+  void set_index_type(const char *type) { index_type_ = type; }
+  void set_distance_type(const char *distance_type) { distance_type_ = distance_type; }
+  void set_lists(int lists) { lists_ = lists; }
+  void set_probes(int probes) { probes_ = probes; }
+
   void desc(ostream &os) const;
 
 public:
@@ -50,4 +61,9 @@ public:
 protected:
   string name_;   // index's name
   string field_;  // field's name
+
+  string index_type_    = "bplus_tree";
+  string distance_type_ = "l2_distance";
+  int    lists_         = 0;
+  int    probes_        = 0;
 };

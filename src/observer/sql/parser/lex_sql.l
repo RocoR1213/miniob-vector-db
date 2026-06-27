@@ -73,6 +73,7 @@ QUOTE            [\'\"]
 /* 2. 写在最前面的优先 */
 
 /* yylval 就可以认为是 yacc 中 %union 定义的结构体(union 结构) */
+
 %%
 
 {WHITE_SPACE}                                        // ignore whitespace
@@ -102,6 +103,10 @@ CALC                                    RETURN_TOKEN(CALC);
 FROM                                    RETURN_TOKEN(FROM);
 WHERE                                   RETURN_TOKEN(WHERE);
 LIMIT                                   RETURN_TOKEN(LIMIT);
+WITH                                    RETURN_TOKEN(WITH);
+LISTS                                   RETURN_TOKEN(LISTS);
+PROBES                                  RETURN_TOKEN(PROBES);
+TYPE                                    RETURN_TOKEN(TYPE);
 AND                                     RETURN_TOKEN(AND);
 INSERT                                  RETURN_TOKEN(INSERT);
 INTO                                    RETURN_TOKEN(INTO);

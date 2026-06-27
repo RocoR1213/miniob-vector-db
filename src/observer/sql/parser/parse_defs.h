@@ -208,6 +208,30 @@ struct CreateIndexSqlNode
   string index_name;      ///< Index name
   string relation_name;   ///< Relation name
   string attribute_name;  ///< Attribute name
+
+  bool   is_vector     = false;  ///< 是否为向量索引
+  bool   options_valid = true;   ///< 向量索引参数是否有效
+  string index_type;             ///< 向量索引类型
+  string distance_type;          ///< 向量距离算法
+  int    lists  = 0;             ///< IVF 聚类数量
+  int    probes = 0;             ///< 查询时探测的聚类数量
+};
+
+/**
+ * @brief CREATE VECTOR INDEX 的 WITH 参数
+ */
+struct VectorIndexOptionsSqlNode
+{
+  string index_type    = "ivfflat";
+  string distance_type = "l2_distance";
+  int    lists         = 245;
+  int    probes        = 5;
+
+  bool has_index_type    = false;
+  bool has_distance_type = false;
+  bool has_lists         = false;
+  bool has_probes        = false;
+  bool valid             = true;
 };
 
 /**
