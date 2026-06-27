@@ -8,6 +8,8 @@ EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
+// 基于日志系统的引擎，大部分未实现
+
 #pragma once
 
 #include "storage/table/table_engine.h"
@@ -43,7 +45,7 @@ public:
 
   // A4 向量索引注册
   RC create_vector_index(Trx *trx, const FieldMeta *field_meta, const char *index_name, int lists, int probes) override { return RC::UNIMPLEMENTED; }
-  
+
   RC get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode) override;
   RC get_chunk_scanner(ChunkFileScanner &scanner, Trx *trx, ReadWriteMode mode) override { return RC::UNIMPLEMENTED; }
   RC visit_record(const RID &rid, function<bool(Record &)> visitor) override { return RC::UNIMPLEMENTED; }

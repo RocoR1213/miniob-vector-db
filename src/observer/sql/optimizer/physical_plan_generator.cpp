@@ -48,6 +48,10 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/table_scan_vec_physical_operator.h"
 #include "sql/optimizer/physical_plan_generator.h"
 
+// A4 索引扫描
+#include "storage/index/ivfflat_index.h"
+#include "sql/operator/vector_index_scan_physical_operator.h"
+
 using namespace std;
 
 RC PhysicalPlanGenerator::create(LogicalOperator &logical_operator, unique_ptr<PhysicalOperator> &oper, Session* session)
@@ -383,14 +387,79 @@ RC PhysicalPlanGenerator::create_plan(GroupByLogicalOperator &logical_oper, uniq
   return rc;
 }
 
+// A4 原来的全表扫描逻辑
+// 向量索引需要做5个条件过滤，然后替换全表扫描为索引加速，否则回退到全表扫描
 RC PhysicalPlanGenerator::create_plan(SortLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
 {
+  // 拿到子节点
   vector<unique_ptr<LogicalOperator>> &child_opers = logical_oper.children();
+  // 防御校验 如果子节点数量不是1个，返回错误（排序算子子节点只有一个）
   if (child_opers.size() != 1) {
     LOG_WARN("sort operator should have one child, but got %d", child_opers.size());
     return RC::INTERNAL;
   }
 
+  // A4 向量索引探测 如果任一条件失败则回退回全表扫描
+  if (logical_oper.limit() > 0 && logical_oper.order_by_expressions().size() == 1) {  // 条件1 Sort 带 limit，只有一个排序表达式，其他排序处理不了
+    Expression *order_expr = logical_oper.order_by_expressions()[0].get();
+    if (order_expr->type() == ExprType::FUNCTION) {
+      FunctionExpr *func_expr = static_cast<FunctionExpr *>(order_expr);
+      if (func_expr->function_type() == FunctionExpr::Type::DISTANCE) { // 条件2 ORDER BY排序表达式是 DISTANCE 距离函数
+        if (func_expr->children().size() >= 2 && func_expr->children()[0]->type() == ExprType::FIELD) {
+          FieldExpr *field_expr = static_cast<FieldExpr *>(func_expr->children()[0].get());
+          const Field &field = field_expr->field();
+          if (field.attr_type() == AttrType::VECTORS) { // 条件3 DISTANCE 第一个参数是 VECTOR 类型字段
+            // 先找到表，向下遍历逻辑算子链，找到 TABLE_GET 节点，拿到表指针
+            Table *table = nullptr;
+            LogicalOperator *current = child_opers.front().get();
+            while (current) {
+              if (current->type() == LogicalOperatorType::TABLE_GET) {
+                table = static_cast<TableGetLogicalOperator *>(current)->table();
+                break;
+              }
+              if (current->children().empty()) break;
+              current = current->children().front().get();
+            }
+            if (table) {
+              Index *index = table->find_index_by_field(field.field_name());
+              if (index && index->is_vector_index()) {  // 条件4 该字段所在表上有 IvfflatIndex
+                IvfflatIndex *ivf_index = dynamic_cast<IvfflatIndex *>(index);
+                Expression *query_expr = func_expr->children()[1].get();
+                if (query_expr->type() == ExprType::VALUE) {  // 条件5 查询向量是常量（可以提前求值）
+                  ValueExpr *val_expr = static_cast<ValueExpr *>(query_expr);
+                  Value val;
+                  if (val_expr->try_get_value(val) == RC::SUCCESS) {
+
+                    // 提取查询向量的 float 数组
+                    int dim = val.length() / sizeof(float);
+                    const float *raw = reinterpret_cast<const float *>(val.data());
+                    vector<float> query_vec(raw, raw + dim);
+
+                    // 创建向量索引扫描算子VectorIndexScan 替代全表扫描TABLE_SCAN
+                    auto scan_oper = make_unique<VectorIndexScanPhysicalOperator>(
+                        table, ivf_index, query_vec,
+                        logical_oper.limit(), ivf_index->index_meta().probes());
+
+                    // 外层保留 Sort 算子，兼容排序语义，实际索引已返回有序结果
+                    auto sort_oper = make_unique<SortPhysicalOperator>(
+                        std::move(logical_oper.order_by_expressions()),
+                        std::move(logical_oper.ascending()),
+                        logical_oper.limit());
+                    sort_oper->add_child(std::move(scan_oper));
+                    oper = std::move(sort_oper);
+                    LOG_INFO("A4: use VECTOR_INDEX_SCAN for vector Top-K query");
+                    return RC::SUCCESS;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 递归生成子节点的物理计划
   unique_ptr<PhysicalOperator> child_physical_oper;
   RC rc = create(*child_opers.front(), child_physical_oper, session);
   if (OB_FAIL(rc)) {
@@ -398,6 +467,7 @@ RC PhysicalPlanGenerator::create_plan(SortLogicalOperator &logical_oper, unique_
     return rc;
   }
 
+  // 创建物理排序算子，拼接成树
   auto sort_oper = make_unique<SortPhysicalOperator>(
       std::move(logical_oper.order_by_expressions()), std::move(logical_oper.ascending()), logical_oper.limit());
   sort_oper->add_child(std::move(child_physical_oper));

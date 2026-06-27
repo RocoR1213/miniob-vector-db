@@ -254,7 +254,8 @@ RC IvfflatIndex::delete_entry(const char *, const RID *) {
 
 // 同步索引
 RC IvfflatIndex::sync() {
-    return RC::UNIMPLEMENTED;
+    // create() 中已写入完整索引文件，无需额外同步
+    return RC::SUCCESS;
 }
 
 // B+树扫描器
