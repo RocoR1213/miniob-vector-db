@@ -1,5 +1,6 @@
-
 %{
+/* Panda
+yacc_sql.y 是语法分析器，定义合法的token序列语法 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,6 +79,8 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %parse-param { ParsedSqlResult * sql_result }
 %parse-param { void * scanner }
 
+// Panda 这里标注了所有合法的关键字
+
 //标识tokens
 %token  SEMICOLON
         AS
@@ -118,7 +121,14 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
         VALUES
         FROM
         WHERE
+
+        // A4
         LIMIT
+        WITH
+        LISTS
+        PROBES
+        TYPE
+
         AND
         SET
         ON
@@ -184,6 +194,8 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %token <cstring> SSS
 //非终结符
 
+// Panda 所有参数类型定义应在这里被限制
+
 /** type 定义了各种解析后的结果输出的是什么类型。类型对应了 union 中的定义的成员变量名称 **/
 %type <number>              type
 %type <condition>           condition
@@ -212,7 +224,13 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %type <order_by_list>       order_by_list
 %type <order_by>            order_by_unit
 %type <number>              sort_direction
+
+// A4
 %type <number>              limit
+// 对于直接长句内联版，不用声明
+//%type <number>              lists
+//%type <number>              probes
+
 %type <cstring>             fields_terminated_by
 %type <cstring>             enclosed_by
 %type <sql_node>            calc_stmt
@@ -346,7 +364,37 @@ create_index_stmt:    /*create index 语句的语法解析树*/
       create_index.relation_name = $5;
       create_index.attribute_name = $7;
     }
+    // A4 新增向量索引规则 CREATE VECTOR INDEX 索引名 ON 表名 { 字段名 } WITH {lists = 数值,probes = 数值}
+    // Panda 在yacc规则体中，$n代表第n个符号的位置，例如这里CREATE就是$1
+    | CREATE VECTOR_T INDEX ID ON ID LBRACE ID RBRACE WITH LBRACE LISTS EQ NUMBER COMMA PROBES EQ NUMBER RBRACE
+    {
+      $$ = new ParsedSqlNode(SCF_CREATE_INDEX);
+      CreateIndexSqlNode &create_index = $$->create_index;
+      // 需要传递参数 ID -> index_name,relation_name,attribute_name 
+      create_index.index_name = $4;
+      create_index.relation_name = $6;
+      create_index.attribute_name = $8;
+      create_index.index_type = "ivfflat";
+      create_index.lists = $14;
+      create_index.probes = $18;
+    }
     ;
+
+// 如果采用更工程化的写法可以拆分lists和probes语句，使调试和可复用性更好
+/*
+lists:
+    LISTS EQ NUMBER
+    {
+      $$ = $3;
+    }
+    ;
+probes:
+    PROBES EQ NUMBER
+    {
+      $$ = $3;
+    }
+    ;
+*/
 
 drop_index_stmt:      /*drop index 语句的语法解析树*/
     DROP INDEX ID ON ID

@@ -12,6 +12,9 @@ See the Mulan PSL v2 for more details. */
 // Created by Meiyi
 //
 
+/* Panda
+parse_defs.h 定义了SQL解析后各种语句的中间数据结构体，将解析结果填入传给语义分析*/
+
 #pragma once
 
 #include "common/lang/string.h"
@@ -208,6 +211,11 @@ struct CreateIndexSqlNode
   string index_name;      ///< Index name
   string relation_name;   ///< Relation name
   string attribute_name;  ///< Attribute name
+  
+  // A4 通过lists检测索引类型
+  string index_type;      ///< 索引类型
+  int    lists = 0;       ///< 聚类数
+  int    probes = 0;      ///< 探测簇数
 };
 
 /**
