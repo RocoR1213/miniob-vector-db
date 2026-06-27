@@ -299,6 +299,12 @@ RC Table::create_index(Trx *trx, const FieldMeta *field_meta, const char *index_
   return engine_->create_index(trx, field_meta, index_name);
 }
 
+// A4 创建向量索引
+RC Table::create_vector_index(Trx *trx, const FieldMeta *field_meta, const char *index_name, int lists, int probes)
+{
+  return engine_->create_vector_index(trx, field_meta, index_name, lists, probes);
+}
+
 RC Table::delete_record(const Record &record)
 {
   return engine_->delete_record(record);

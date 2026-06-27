@@ -212,7 +212,7 @@ struct CreateIndexSqlNode
   string relation_name;   ///< Relation name
   string attribute_name;  ///< Attribute name
   
-  // A4 通过lists检测索引类型
+  // A4 通过index_type检测索引类型 在语法解析阶段发现向量索引语法会赋值为"ivfflat"
   string index_type;      ///< 索引类型
   int    lists = 0;       ///< 聚类数
   int    probes = 0;      ///< 探测簇数

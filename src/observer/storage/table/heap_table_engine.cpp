@@ -15,6 +15,9 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/meta_util.h"
 #include "storage/db/db.h"
 
+// A4 向量索引
+#include "storage/index/ivfflat_index.h"
+
 
 HeapTableEngine::~HeapTableEngine()
 {
@@ -178,6 +181,111 @@ RC HeapTableEngine::create_index(Trx *trx, const FieldMeta *field_meta, const ch
   delete scanner;
   LOG_INFO("inserted all records into new index. table=%s, index=%s", table_meta_->name(), index_name);
 
+  indexes_.push_back(index);
+
+  /// 接下来将这个索引放到表的元数据中
+  TableMeta new_table_meta(*table_meta_);
+  rc = new_table_meta.add_index(new_index_meta);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to add index (%s) on table (%s). error=%d:%s", index_name, table_meta_->name(), rc, strrc(rc));
+    return rc;
+  }
+
+  /// 内存中有一份元数据，磁盘文件也有一份元数据。修改磁盘文件时，先创建一个临时文件，写入完成后再rename为正式文件
+  /// 这样可以防止文件内容不完整
+  // 创建元数据临时文件
+  string  tmp_file = table_meta_file(db_->path().c_str(), table_meta_->name()) + ".tmp";
+  fstream fs;
+  fs.open(tmp_file, ios_base::out | ios_base::binary | ios_base::trunc);
+  if (!fs.is_open()) {
+    LOG_ERROR("Failed to open file for write. file name=%s, errmsg=%s", tmp_file.c_str(), strerror(errno));
+    return RC::IOERR_OPEN;  // 创建索引中途出错，要做还原操作
+  }
+  if (new_table_meta.serialize(fs) < 0) {
+    LOG_ERROR("Failed to dump new table meta to file: %s. sys err=%d:%s", tmp_file.c_str(), errno, strerror(errno));
+    return RC::IOERR_WRITE;
+  }
+  fs.close();
+
+  // 覆盖原始元数据文件
+  string meta_file = table_meta_file(db_->path().c_str(), table_meta_->name());
+
+  int ret = rename(tmp_file.c_str(), meta_file.c_str());
+  if (ret != 0) {
+    LOG_ERROR("Failed to rename tmp meta file (%s) to normal meta file (%s) while creating index (%s) on table (%s). "
+              "system error=%d:%s",
+              tmp_file.c_str(), meta_file.c_str(), index_name, table_meta_->name(), errno, strerror(errno));
+    return RC::IOERR_WRITE;
+  }
+
+  table_meta_->swap(new_table_meta);
+
+  LOG_INFO("Successfully added a new index (%s) on the table (%s)", index_name, table_meta_->name());
+  return rc;
+}
+
+// A4 向量索引
+RC HeapTableEngine::create_vector_index(Trx *trx, const FieldMeta *field_meta, const char *index_name, int lists, int probes) {
+  // STAGE 1 参数校验 新增对lists和probes的校验
+  if (common::is_blank(index_name) || nullptr == field_meta || lists <= 0 || probes <= 0) {
+    LOG_INFO("Invalid input arguments, lists and probes must be positive. table=%s", table_meta_->name());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  // STAGE 2 初始化索引元数据 新增lists和probes
+  IndexMeta new_index_meta;
+  RC rc = new_index_meta.init(index_name, *field_meta);
+  if (rc != RC::SUCCESS) {
+    LOG_INFO("Failed to init IndexMeta in table:%s, index_name:%s, field_name:%s", 
+             table_meta_->name(), index_name, field_meta->name());
+    return rc;
+  }
+  new_index_meta.set_lists(lists);
+  new_index_meta.set_probes(probes);
+
+  // STAGE 3 创建索引实例并训练KMeans模型
+
+  // 创建索引相关数据
+  IvfflatIndex    *index      = new IvfflatIndex();
+  string          index_file  = table_index_file(db_->path().c_str(), table_meta_->name(), index_name);
+
+  rc = index->create(table_, index_file.c_str(), new_index_meta, *field_meta);
+  if (rc != RC::SUCCESS) {
+    delete index;
+    LOG_ERROR("Failed to create bplus tree index. file name=%s, rc=%d:%s", index_file.c_str(), rc, strrc(rc));
+    return rc;
+  }
+
+  // 遍历当前的所有数据，插入这个索引
+  RecordScanner *scanner = nullptr;
+  rc = get_record_scanner(scanner, trx, ReadWriteMode::READ_ONLY);
+  if (rc != RC::SUCCESS) {
+    LOG_WARN("failed to create scanner while creating index. table=%s, index=%s, rc=%s", 
+             table_meta_->name(), index_name, strrc(rc));
+    return rc;
+  }
+
+  Record record;
+  while (OB_SUCC(rc = scanner->next(record))) {
+    rc = index->insert_entry(record.data(), &record.rid());
+    if (rc != RC::SUCCESS) {
+      LOG_WARN("failed to insert record into index while creating index. table=%s, index=%s, rc=%s",
+               table_meta_->name(), index_name, strrc(rc));
+      return rc;
+    }
+  }
+  if (RC::RECORD_EOF == rc) {
+    rc = RC::SUCCESS;
+  } else {
+    LOG_WARN("failed to insert record into index while creating index. table=%s, index=%s, rc=%s",
+             table_meta_->name(), index_name, strrc(rc));
+    return rc;
+  }
+  scanner->close_scan();
+  delete scanner;
+  LOG_INFO("inserted all records into new index. table=%s, index=%s", table_meta_->name(), index_name);
+
+  // 加入内存索引列表
   indexes_.push_back(index);
 
   /// 接下来将这个索引放到表的元数据中
