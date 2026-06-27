@@ -1,6 +1,4 @@
 %{
-/* Panda
-yacc_sql.y 是语法分析器，定义合法的token序列语法 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +65,43 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
   return expr;
 }
 
+string vector_index_option_value(const char *text)
+{
+  string value = text;
+  if (value.size() >= 2 &&
+      ((value.front() == '\'' && value.back() == '\'') || (value.front() == '"' && value.back() == '"'))) {
+    value = value.substr(1, value.size() - 2);
+  }
+  common::strip(value);
+  common::str_to_lower(value);
+  return value;
+}
+
+void merge_vector_index_options(VectorIndexOptionsSqlNode &target, const VectorIndexOptionsSqlNode &source)
+{
+  if (source.has_index_type) {
+    target.valid          = target.valid && !target.has_index_type;
+    target.index_type     = source.index_type;
+    target.has_index_type = true;
+  }
+  if (source.has_distance_type) {
+    target.valid             = target.valid && !target.has_distance_type;
+    target.distance_type     = source.distance_type;
+    target.has_distance_type = true;
+  }
+  if (source.has_lists) {
+    target.valid     = target.valid && !target.has_lists;
+    target.lists     = source.lists;
+    target.has_lists = true;
+  }
+  if (source.has_probes) {
+    target.valid      = target.valid && !target.has_probes;
+    target.probes     = source.probes;
+    target.has_probes = true;
+  }
+  target.valid = target.valid && source.valid;
+}
+
 %}
 
 %define api.pure full
@@ -78,8 +113,6 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %parse-param { const char * sql_string }
 %parse-param { ParsedSqlResult * sql_result }
 %parse-param { void * scanner }
-
-// Panda 这里标注了所有合法的关键字
 
 //标识tokens
 %token  SEMICOLON
@@ -122,7 +155,6 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
         FROM
         WHERE
 
-        // A4
         LIMIT
         WITH
         LISTS
@@ -164,6 +196,7 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
   vector<unique_ptr<Expression>> *           expression_list;
   OrderBySqlNode *                           order_by;
   vector<OrderBySqlNode> *                   order_by_list;
+  VectorIndexOptionsSqlNode *                vector_index_options;
   vector<Value> *                            value_list;
   vector<ConditionSqlNode> *                 condition_list;
   vector<RelAttrSqlNode> *                   rel_attr_list;
@@ -182,6 +215,7 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %destructor { delete $$; } <expression_list>
 %destructor { delete $$; } <order_by>
 %destructor { delete $$; } <order_by_list>
+%destructor { delete $$; } <vector_index_options>
 %destructor { delete $$; } <value_list>
 %destructor { delete $$; } <condition_list>
 // %destructor { delete $$; } <rel_attr_list>
@@ -193,8 +227,6 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %token <cstring> ID
 %token <cstring> SSS
 //非终结符
-
-// Panda 所有参数类型定义应在这里被限制
 
 /** type 定义了各种解析后的结果输出的是什么类型。类型对应了 union 中的定义的成员变量名称 **/
 %type <number>              type
@@ -225,11 +257,10 @@ FunctionExpr *create_function_expression(FunctionExpr::Type function_type,
 %type <order_by>            order_by_unit
 %type <number>              sort_direction
 
-// A4
 %type <number>              limit
-// 对于直接长句内联版，不用声明
-//%type <number>              lists
-//%type <number>              probes
+%type <vector_index_options> vector_index_options
+%type <vector_index_options> vector_index_option_list
+%type <vector_index_options> vector_index_option
 
 %type <cstring>             fields_terminated_by
 %type <cstring>             enclosed_by
@@ -364,37 +395,85 @@ create_index_stmt:    /*create index 语句的语法解析树*/
       create_index.relation_name = $5;
       create_index.attribute_name = $7;
     }
-    // A4 新增向量索引规则 CREATE VECTOR INDEX 索引名 ON 表名 { 字段名 } WITH {lists = 数值,probes = 数值}
-    // Panda 在yacc规则体中，$n代表第n个符号的位置，例如这里CREATE就是$1
-    | CREATE VECTOR_T INDEX ID ON ID LBRACE ID RBRACE WITH LBRACE LISTS EQ NUMBER COMMA PROBES EQ NUMBER RBRACE
+    | CREATE VECTOR_T INDEX ID ON ID LBRACE ID RBRACE vector_index_options
     {
       $$ = new ParsedSqlNode(SCF_CREATE_INDEX);
       CreateIndexSqlNode &create_index = $$->create_index;
-      // 需要传递参数 ID -> index_name,relation_name,attribute_name 
       create_index.index_name = $4;
       create_index.relation_name = $6;
       create_index.attribute_name = $8;
-      create_index.index_type = "ivfflat";
-      create_index.lists = $14;
-      create_index.probes = $18;
+      create_index.is_vector = true;
+      create_index.options_valid = $10->valid;
+      create_index.index_type = $10->index_type;
+      create_index.distance_type = $10->distance_type;
+      create_index.lists = $10->lists;
+      create_index.probes = $10->probes;
+      delete $10;
     }
     ;
 
-// 如果采用更工程化的写法可以拆分lists和probes语句，使调试和可复用性更好
-/*
-lists:
-    LISTS EQ NUMBER
+vector_index_options:
+    /* empty */
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+    }
+    | WITH LBRACE vector_index_option_list RBRACE
     {
       $$ = $3;
     }
     ;
-probes:
-    PROBES EQ NUMBER
+
+vector_index_option_list:
+    vector_index_option
     {
-      $$ = $3;
+      $$ = $1;
+    }
+    | vector_index_option_list COMMA vector_index_option
+    {
+      merge_vector_index_options(*$1, *$3);
+      delete $3;
+      $$ = $1;
     }
     ;
-*/
+
+vector_index_option:
+    TYPE EQ ID
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+      $$->index_type = vector_index_option_value($3);
+      $$->has_index_type = true;
+    }
+    | TYPE EQ SSS
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+      $$->index_type = vector_index_option_value($3);
+      $$->has_index_type = true;
+    }
+    | DISTANCE EQ ID
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+      $$->distance_type = vector_index_option_value($3);
+      $$->has_distance_type = true;
+    }
+    | DISTANCE EQ SSS
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+      $$->distance_type = vector_index_option_value($3);
+      $$->has_distance_type = true;
+    }
+    | LISTS EQ NUMBER
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+      $$->lists = $3;
+      $$->has_lists = true;
+    }
+    | PROBES EQ NUMBER
+    {
+      $$ = new VectorIndexOptionsSqlNode();
+      $$->probes = $3;
+      $$->has_probes = true;
+    }
+    ;
 
 drop_index_stmt:      /*drop index 语句的语法解析树*/
     DROP INDEX ID ON ID

@@ -4,12 +4,6 @@
 定义yy_size_t的原因是因为flex生成的代码，会使用yy_size_t与其他类型的数字
 做比较，导致编译报警
 */
-
-
-/* Panda
-lex_sql.l 是MiniOB的词法分析器，利用正则表达式将SQL输入切分为token，将被flex拼接到lex_sql.cpp */
-
-
 #define YY_TYPEDEF_YY_SIZE_T
 typedef int yy_size_t;
 
@@ -80,18 +74,6 @@ QUOTE            [\'\"]
 
 /* yylval 就可以认为是 yacc 中 %union 定义的结构体(union 结构) */
 
-/* flex 在 %% 之后的规则区域中，单行注释，会被当成要匹配的文本模式 */
-
-/*
-A4 Add Key Word
-LIMIT
-WITH
-LISTS
-PROBES
-TYPE
-*/
-
-
 %%
 
 {WHITE_SPACE}                                        // ignore whitespace
@@ -120,13 +102,11 @@ ORDER                                   RETURN_TOKEN(ORDER);
 CALC                                    RETURN_TOKEN(CALC);
 FROM                                    RETURN_TOKEN(FROM);
 WHERE                                   RETURN_TOKEN(WHERE);
-
 LIMIT                                   RETURN_TOKEN(LIMIT);
 WITH                                    RETURN_TOKEN(WITH);
 LISTS                                   RETURN_TOKEN(LISTS);
 PROBES                                  RETURN_TOKEN(PROBES);
 TYPE                                    RETURN_TOKEN(TYPE);
-
 AND                                     RETURN_TOKEN(AND);
 INSERT                                  RETURN_TOKEN(INSERT);
 INTO                                    RETURN_TOKEN(INTO);

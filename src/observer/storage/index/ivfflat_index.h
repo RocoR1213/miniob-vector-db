@@ -1,73 +1,71 @@
-// Panda IVFFlat索引类
+/* Copyright (c) 2021 OceanBase and/or its affiliates. All rights reserved.
+miniob is licensed under Mulan PSL v2.
+You can use this software according to the terms and conditions of the Mulan PSL v2.
+You may obtain a copy of Mulan PSL v2 at:
+         http://license.coscl.org.cn/MulanPSL2.
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+See the Mulan PSL v2 for more details. */
+
 #pragma once
 
-#include "storage/index/index.h"
+#include <string>
 #include <vector>
-#include <cmath>
 
-using namespace std;
+#include "storage/index/index.h"
 
+/**
+ * @brief IVF_Flat 向量索引
+ */
 class IvfflatIndex : public Index
 {
 public:
-  // 这些都是继承父类的方法，必须全部实现
+  IvfflatIndex() = default;
+  ~IvfflatIndex() noexcept override;
 
-  // 构造函数
-  IvfflatIndex()  = default;
-
-  // 析构函数
-  virtual ~IvfflatIndex() noexcept = default;
-
-  // 创建索引
-  RC create(Table *table, const char *file_name,
-            const IndexMeta &index_meta, const FieldMeta &field_meta) override;
-
-  // 打开索引
-  RC open(Table *table, const char *file_name,
-          const IndexMeta &index_meta, const FieldMeta &field_meta) override;
-  
-  // 关闭索引
+  RC create(Table *table, const char *file_name, const IndexMeta &index_meta, const FieldMeta &field_meta) override;
+  RC open(Table *table, const char *file_name, const IndexMeta &index_meta, const FieldMeta &field_meta) override;
   RC close();
 
-  // 插入索引项
   RC insert_entry(const char *record, const RID *rid) override;
-
-  // 删除索引项
   RC delete_entry(const char *record, const RID *rid) override;
-
-  // 同步索引
   RC sync() override;
 
-  // B+树扫描器 向量索引不需要 一直返回nullptr即可
-  IndexScanner *create_scanner(const char *left_key, int left_len, bool left_inclusive,
-                               const char *right_key, int right_len,
-                               bool right_inclusive) override;
+  IndexScanner *create_scanner(const char *left_key, int left_len, bool left_inclusive, const char *right_key,
+      int right_len, bool right_inclusive) override;
 
-  // 向量索引校验
   bool is_vector_index() override { return true; }
 
-  // K_Means检索向量索引查询器入口
-  vector<RID> ann_search(const vector<float> &query_vector,
-                         size_t limit, int probes);
+  /**
+   * @brief 在 probes 个簇中执行近似 Top-K 查询
+   */
+  RC ann_search(
+      const std::vector<float> &query_vector, size_t limit, int probes, bool ascending, std::vector<RID> &result) const;
+
+  bool supports_distance(const std::string &distance_type) const;
 
 private:
-  // K-Means训练
-  RC    do_kmeans(const vector<vector<float>> &vectors);
+  RC do_kmeans(const std::vector<std::vector<float>> &vectors);
+  RC load_file(const char *file_name);
+  RC write_file(const char *file_name) const;
+  RC vector_from_record(const char *record, std::vector<float> &vector) const;
 
-  // 计算2范数距离
-  float l2_distance(const vector<float> &a, const vector<float> &b);
+  int   nearest_center(const std::vector<float> &vector) const;
+  float vector_distance(const std::vector<float> &left, const std::vector<float> &right) const;
 
-  // 查找聚类中心 int量化
-  int   nearest_center(const vector<float> &vec);
+  static RC normalize_distance_type(const std::string &input, std::string &output);
 
-  // 索引状态
-  bool   inited_ = false;
-  Table *table_  = nullptr;
-  int    lists_  = 1;
-  int    probes_ = 1;
-  int    dim_    = 0;
+private:
+  bool        inited_ = false;
+  bool        dirty_  = false;
+  Table      *table_  = nullptr;
+  std::string file_name_;
+  std::string distance_type_ = "l2_distance";
+  int         lists_         = 0;
+  int         probes_        = 1;
+  int         dim_           = 0;
 
-  // 索引数据
-  vector<vector<float>> centers_;         // 聚类中心 [lists_][dim_]
-  vector<vector<RID>>   inverted_lists_;  // 倒排列表 [lists_]
+  std::vector<std::vector<float>> centers_;
+  std::vector<std::vector<RID>>   inverted_lists_;
 };

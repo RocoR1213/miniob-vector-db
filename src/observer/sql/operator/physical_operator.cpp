@@ -36,7 +36,7 @@ string physical_operator_type_name(PhysicalOperatorType type)
     case PhysicalOperatorType::EXPR_VEC: return "EXPR_VEC";
     case PhysicalOperatorType::SORT: return "SORT";
     case PhysicalOperatorType::LIMIT: return "LIMIT";
-    case PhysicalOperatorType::VECTOR_INDEX_SCAN: return "VECTOR_INDEX_SCAN"; // A4 索引扫描
+    case PhysicalOperatorType::VECTOR_INDEX_SCAN: return "VECTOR_INDEX_SCAN";
     default: return "UNKNOWN";
   }
 }

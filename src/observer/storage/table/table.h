@@ -96,8 +96,8 @@ public:
   // TODO refactor
   RC create_index(Trx *trx, const FieldMeta *field_meta, const char *index_name);
 
-  // A4 创建向量索引
-  RC create_vector_index(Trx *trx, const FieldMeta *field_meta, const char *index_name, int lists, int probes);
+  RC create_vector_index(
+      Trx *trx, const FieldMeta *field_meta, const char *index_name, const char *distance_type, int lists, int probes);
 
   RC get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode);
 

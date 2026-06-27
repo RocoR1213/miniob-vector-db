@@ -55,7 +55,7 @@ enum class PhysicalOperatorType
   EXPR_VEC,
   SORT,
   LIMIT,
-  VECTOR_INDEX_SCAN,  // A4 索引扫描
+  VECTOR_INDEX_SCAN,
 };
 
 /**

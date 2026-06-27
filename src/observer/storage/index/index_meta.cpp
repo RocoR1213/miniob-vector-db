@@ -12,9 +12,6 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai.wyl on 2021/5/18.
 //
 
-/* Panda
-JSON序列化实现文件 负责内存索引与磁盘索引交互*/
-
 #include "storage/index/index_meta.h"
 #include "common/lang/string.h"
 #include "common/log/log.h"
@@ -25,7 +22,7 @@ JSON序列化实现文件 负责内存索引与磁盘索引交互*/
 const static Json::StaticString FIELD_NAME("name");
 const static Json::StaticString FIELD_FIELD_NAME("field_name");
 
-// A4 新增向量索引属性
+const static Json::StaticString FIELD_INDEX_TYPE("index_type");
 const static Json::StaticString FIELD_DISTANCE_TYPE("distance_type");
 const static Json::StaticString FIELD_LISTS("lists");
 const static Json::StaticString FIELD_PROBES("probes");
@@ -42,18 +39,18 @@ RC IndexMeta::init(const char *name, const FieldMeta &field)
   return RC::SUCCESS;
 }
 
-// Panda 序列化函数
 void IndexMeta::to_json(Json::Value &json_value) const
 {
   json_value[FIELD_NAME]       = name_;
   json_value[FIELD_FIELD_NAME] = field_;
-  // A4
-  json_value[FIELD_DISTANCE_TYPE] = distance_type_;
-  json_value[FIELD_LISTS]         = lists_;
-  json_value[FIELD_PROBES]        = probes_;
+  json_value[FIELD_INDEX_TYPE] = index_type_;
+  if (is_vector_index()) {
+    json_value[FIELD_DISTANCE_TYPE] = distance_type_;
+    json_value[FIELD_LISTS]         = lists_;
+    json_value[FIELD_PROBES]        = probes_;
+  }
 }
 
-// Panda 反序列化函数
 RC IndexMeta::from_json(const TableMeta &table, const Json::Value &json_value, IndexMeta &index)
 {
   const Json::Value &name_value  = json_value[FIELD_NAME];
@@ -75,7 +72,13 @@ RC IndexMeta::from_json(const TableMeta &table, const Json::Value &json_value, I
     return RC::SCHEMA_FIELD_MISSING;
   }
 
-  // A4 校验枚举值 + 赋值
+  if (json_value.isMember(FIELD_INDEX_TYPE)) {
+    if (!json_value[FIELD_INDEX_TYPE].isString()) {
+      LOG_ERROR("Index type of index [%s] is not a string", name_value.asCString());
+      return RC::INTERNAL;
+    }
+    index.index_type_ = json_value[FIELD_INDEX_TYPE].asString();
+  }
   if (json_value.isMember(FIELD_DISTANCE_TYPE) && json_value[FIELD_DISTANCE_TYPE].isString()) {
     index.distance_type_ = json_value[FIELD_DISTANCE_TYPE].asString();
   }
@@ -86,6 +89,11 @@ RC IndexMeta::from_json(const TableMeta &table, const Json::Value &json_value, I
     index.probes_ = json_value[FIELD_PROBES].asInt();
   }
 
+  // 兼容早期 A4 元数据：当时没有 index_type，仅以 lists/probes 标识向量索引。
+  if (!json_value.isMember(FIELD_INDEX_TYPE) && index.lists_ > 0 && index.probes_ > 0) {
+    index.index_type_ = "ivfflat";
+  }
+
   return index.init(name_value.asCString(), *field);
 }
 
@@ -93,4 +101,10 @@ const char *IndexMeta::name() const { return name_.c_str(); }
 
 const char *IndexMeta::field() const { return field_.c_str(); }
 
-void IndexMeta::desc(ostream &os) const { os << "index name=" << name_ << ", field=" << field_; }
+void IndexMeta::desc(ostream &os) const
+{
+  os << "index name=" << name_ << ", field=" << field_ << ", type=" << index_type_;
+  if (is_vector_index()) {
+    os << ", distance=" << distance_type_ << ", lists=" << lists_ << ", probes=" << probes_;
+  }
+}

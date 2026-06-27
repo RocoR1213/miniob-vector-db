@@ -12,9 +12,6 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2023/4/25.
 //
 
-// Panda 语义对象定义 裸数据将通过工厂方法create转换为index对象
-// A4 新增index_type区分索引类型，新增向量类型索引和lists和probes字段
-
 #pragma once
 
 #include "sql/stmt/stmt.h"
@@ -30,11 +27,15 @@ class FieldMeta;
 class CreateIndexStmt : public Stmt
 {
 public:
-  // A4 构造函数新增三项接收数据
-  CreateIndexStmt(Table *table, const FieldMeta *field_meta, const string &index_name,
-                  const string &index_type = "", int lists = 0, int probes = 0)
-      : table_(table), field_meta_(field_meta), index_name_(index_name),
-        index_type_(index_type), lists_(lists), probes_(probes)
+  CreateIndexStmt(Table *table, const FieldMeta *field_meta, const string &index_name, const string &index_type = "",
+      const string &distance_type = "", int lists = 0, int probes = 0)
+      : table_(table),
+        field_meta_(field_meta),
+        index_name_(index_name),
+        index_type_(index_type),
+        distance_type_(distance_type),
+        lists_(lists),
+        probes_(probes)
   {}
 
   virtual ~CreateIndexStmt() = default;
@@ -45,10 +46,11 @@ public:
   const FieldMeta *field_meta() const { return field_meta_; }
   const string    &index_name() const { return index_name_; }
 
-  // A4 三项新增数据getter
-  const string    &index_type() const { return index_type_; }
-  int               lists() const { return lists_; }
-  int               probes() const { return probes_; }
+  bool          is_vector_index() const { return !index_type_.empty(); }
+  const string &index_type() const { return index_type_; }
+  const string &distance_type() const { return distance_type_; }
+  int           lists() const { return lists_; }
+  int           probes() const { return probes_; }
 
 public:
   static RC create(Db *db, const CreateIndexSqlNode &create_index, Stmt *&stmt);
@@ -58,8 +60,8 @@ private:
   const FieldMeta *field_meta_ = nullptr;
   string           index_name_;
 
-  // A4 三项新增数据
-  string           index_type_;
-  int              lists_ = 0;
-  int              probes_ = 0;
+  string index_type_;
+  string distance_type_;
+  int    lists_  = 0;
+  int    probes_ = 0;
 };

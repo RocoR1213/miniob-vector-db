@@ -8,8 +8,6 @@ EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
-// table_engine注册所有方法调用 必须声明函数
-
 #pragma once
 
 #include "common/types.h"
@@ -48,19 +46,17 @@ public:
   virtual RC update_record_with_trx(const Record &old_record, const Record &new_record, Trx *trx) = 0;
   virtual RC get_record(const RID &rid, Record &record)                                           = 0;
 
-  virtual RC     create_index(Trx *trx, const FieldMeta *field_meta, const char *index_name) = 0;
+  virtual RC create_index(Trx *trx, const FieldMeta *field_meta, const char *index_name) = 0;
+  virtual RC create_vector_index(Trx *trx, const FieldMeta *field_meta, const char *index_name,
+      const char *distance_type, int lists, int probes)                                  = 0;
 
-  // A4 向量索引注册
-  // 给默认实现UNSUPPORTED的好处是子类不强制 override，如果走错分支会自动报 UNSUPPORTED
-  virtual RC     create_vector_index(Trx *trx, const FieldMeta *field_meta, const char *index_name, int lists, int probes) { return RC::UNSUPPORTED; }
-
-  virtual RC     get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode)   = 0;
-  virtual RC     get_chunk_scanner(ChunkFileScanner &scanner, Trx *trx, ReadWriteMode mode)  = 0;
-  virtual RC     visit_record(const RID &rid, function<bool(Record &)> visitor)              = 0;
-  virtual RC     sync()                                                                      = 0;
-  virtual Index *find_index(const char *index_name) const                                    = 0;
-  virtual Index *find_index_by_field(const char *field_name) const                           = 0;
-  virtual RC     open()                                                                      = 0;
+  virtual RC     get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode)  = 0;
+  virtual RC     get_chunk_scanner(ChunkFileScanner &scanner, Trx *trx, ReadWriteMode mode) = 0;
+  virtual RC     visit_record(const RID &rid, function<bool(Record &)> visitor)             = 0;
+  virtual RC     sync()                                                                     = 0;
+  virtual Index *find_index(const char *index_name) const                                   = 0;
+  virtual Index *find_index_by_field(const char *field_name) const                          = 0;
+  virtual RC     open()                                                                     = 0;
   // TODO: remove this function
   virtual RC init() = 0;
 
